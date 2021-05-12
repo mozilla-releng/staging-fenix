@@ -7,14 +7,17 @@ package org.mozilla.fenix.tabstray
 import android.content.Context
 import androidx.navigation.NavController
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.selector.getNormalOrPrivateTabs
 import mozilla.components.browser.state.selector.normalTabs
 import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.browser.storage.sync.Tab as SyncTab
 import mozilla.components.concept.engine.prompt.ShareData
 import mozilla.components.concept.tabstray.Tab
+import mozilla.components.service.fxa.manager.FxaAccountManager
+import org.mozilla.fenix.BrowserDirection
+import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.collections.CollectionsDialog
 import org.mozilla.fenix.collections.show
 import org.mozilla.fenix.components.TabCollectionStorage
@@ -24,6 +27,7 @@ import org.mozilla.fenix.components.metrics.MetricController
 import org.mozilla.fenix.ext.navigateBlockingForAsyncNavGraph
 import org.mozilla.fenix.home.HomeFragment
 import org.mozilla.fenix.tabstray.ext.getTabSessionState
+import kotlin.coroutines.CoroutineContext
 
 /**
  * An interactor that helps with navigating to different parts of the app from the tabs tray.
@@ -34,6 +38,11 @@ interface NavigationInteractor {
      * Called when tab tray should be dismissed.
      */
     fun onTabTrayDismissed()
+
+    /**
+     * Called when clicking the account settings button.
+     */
+    fun onAccountSettingsClicked()
 
     /**
      * Called when sharing a list of [Tab]s.
@@ -69,6 +78,11 @@ interface NavigationInteractor {
      * Used when adding [Tab]s as bookmarks.
      */
     fun onSaveToBookmarks(tabs: Collection<Tab>)
+
+    /**
+     * Called when clicking on a SyncedTab item.
+     */
+    fun onSyncedTabClicked(tab: SyncTab)
 }
 
 /**
@@ -77,6 +91,7 @@ interface NavigationInteractor {
 @Suppress("LongParameterList")
 class DefaultNavigationInteractor(
     private val context: Context,
+    private val activity: HomeActivity,
     private val browserStore: BrowserStore,
     private val navController: NavController,
     private val metrics: MetricController,
@@ -84,21 +99,36 @@ class DefaultNavigationInteractor(
     private val dismissTabTrayAndNavigateHome: (String) -> Unit,
     private val bookmarksUseCase: BookmarksUseCase,
     private val tabsTrayStore: TabsTrayStore,
-    private val collectionStorage: TabCollectionStorage
+    private val collectionStorage: TabCollectionStorage,
+    private val accountManager: FxaAccountManager,
+    private val ioDispatcher: CoroutineContext
 ) : NavigationInteractor {
 
     override fun onTabTrayDismissed() {
         dismissTabTray()
     }
 
+    override fun onAccountSettingsClicked() {
+        val isSignedIn = accountManager.authenticatedAccount() != null
+
+        val direction = if (isSignedIn) {
+            TabsTrayFragmentDirections.actionGlobalAccountSettingsFragment()
+        } else {
+            TabsTrayFragmentDirections.actionGlobalTurnOnSync()
+        }
+        navController.navigateBlockingForAsyncNavGraph(direction)
+    }
+
     override fun onTabSettingsClicked() {
         navController.navigateBlockingForAsyncNavGraph(
-            TabsTrayFragmentDirections.actionGlobalTabSettingsFragment())
+            TabsTrayFragmentDirections.actionGlobalTabSettingsFragment()
+        )
     }
 
     override fun onOpenRecentlyClosedClicked() {
         navController.navigateBlockingForAsyncNavGraph(
-            TabsTrayFragmentDirections.actionGlobalRecentlyClosed())
+            TabsTrayFragmentDirections.actionGlobalRecentlyClosed()
+        )
         metrics.track(Event.RecentlyClosedTabsOpened)
     }
 
@@ -161,8 +191,9 @@ class DefaultNavigationInteractor(
     override fun onSaveToBookmarks(tabs: Collection<Tab>) {
         tabs.forEach { tab ->
             // We don't combine the context with lifecycleScope so that our jobs are not cancelled
-            // if we leave the fragment, i.e. we still want the bookmarks to be added.
-            CoroutineScope(Dispatchers.IO).launch {
+            // if we leave the fragment, i.e. we still want the bookmarks to be added if the
+            // tabs tray closes before the job is done.
+            CoroutineScope(ioDispatcher).launch {
                 bookmarksUseCase.addBookmark(tab.url, tab.title)
             }
         }
@@ -170,5 +201,14 @@ class DefaultNavigationInteractor(
         tabsTrayStore.dispatch(TabsTrayAction.ExitSelectMode)
 
         // TODO show successful snackbar here (regardless of operation succes).
+    }
+
+    override fun onSyncedTabClicked(tab: SyncTab) {
+        metrics.track(Event.SyncedTabOpened)
+        activity.openToBrowserAndLoad(
+            searchTermOrURL = tab.active().url,
+            newTab = true,
+            from = BrowserDirection.FromTabTray
+        )
     }
 }

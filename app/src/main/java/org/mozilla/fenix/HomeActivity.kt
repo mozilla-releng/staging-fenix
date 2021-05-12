@@ -52,7 +52,6 @@ import mozilla.components.concept.storage.BookmarkNodeType
 import mozilla.components.feature.contextmenu.DefaultSelectionActionDelegate
 import mozilla.components.feature.privatemode.notification.PrivateNotificationFeature
 import mozilla.components.feature.search.BrowserStoreSearchAdapter
-import mozilla.components.feature.search.ext.legacy
 import mozilla.components.service.fxa.sync.SyncReason
 import mozilla.components.support.base.feature.ActivityResultHandler
 import mozilla.components.support.base.feature.UserInteractionHandler
@@ -83,10 +82,10 @@ import org.mozilla.fenix.ext.navigateBlockingForAsyncNavGraph
 import org.mozilla.fenix.ext.measureNoInline
 import org.mozilla.fenix.ext.metrics
 import org.mozilla.fenix.ext.nav
+import org.mozilla.fenix.ext.setNavigationIcon
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.HomeFragmentDirections
 import org.mozilla.fenix.home.intent.CrashReporterIntentProcessor
-import org.mozilla.fenix.home.intent.DeepLinkIntentProcessor
 import org.mozilla.fenix.home.intent.OpenBrowserIntentProcessor
 import org.mozilla.fenix.home.intent.OpenSpecificTabIntentProcessor
 import org.mozilla.fenix.home.intent.SpeechProcessingIntentProcessor
@@ -99,7 +98,9 @@ import org.mozilla.fenix.perf.NavGraphProvider
 import org.mozilla.fenix.perf.Performance
 import org.mozilla.fenix.perf.PerformanceInflater
 import org.mozilla.fenix.perf.ProfilerMarkers
+import org.mozilla.fenix.perf.StartupPathProvider
 import org.mozilla.fenix.perf.StartupTimeline
+import org.mozilla.fenix.perf.StartupTypeTelemetry
 import org.mozilla.fenix.search.SearchDialogFragmentDirections
 import org.mozilla.fenix.session.PrivateNotificationService
 import org.mozilla.fenix.settings.SettingsFragmentDirections
@@ -157,7 +158,6 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
         listOf(
             SpeechProcessingIntentProcessor(this, components.core.store, components.analytics.metrics),
             StartSearchIntentProcessor(components.analytics.metrics),
-            DeepLinkIntentProcessor(this, components.analytics.leanplumMetricsService),
             OpenBrowserIntentProcessor(this, ::getIntentSessionId),
             OpenSpecificTabIntentProcessor(this)
         )
@@ -171,6 +171,9 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
     // Tracker for contextual menu (Copy|Search|Select all|etc...)
     private var actionMode: ActionMode? = null
 
+    private val startupPathProvider = StartupPathProvider()
+    private lateinit var startupTypeTelemetry: StartupTypeTelemetry
+
     final override fun onCreate(savedInstanceState: Bundle?): Unit = PerfStartup.homeActivityOnCreate.measureNoInline {
         // DO NOT MOVE ANYTHING ABOVE THIS addMarker CALL.
         components.core.engine.profiler?.addMarker("Activity.onCreate", "HomeActivity")
@@ -178,6 +181,8 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
         components.strictMode.attachListenerToDisablePenaltyDeath(supportFragmentManager)
         // There is disk read violations on some devices such as samsung and pixel for android 9/10
         components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+            // Theme setup should always be called before super.onCreate
+            setupThemeAndBrowsingMode(getModeFromIntentOrLastKnown(intent))
             super.onCreate(savedInstanceState)
         }
 
@@ -193,7 +198,6 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
 
         components.publicSuffixList.prefetch()
 
-        setupThemeAndBrowsingMode(getModeFromIntentOrLastKnown(intent))
         setContentView(R.layout.activity_home).run {
             // Do not call anything between setContentView and inflateNavGraphAsync.
             // It needs to start its job as early as possible.
@@ -214,17 +218,8 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
             it.start()
         }
 
-        if (isActivityColdStarted(
-                intent,
-                savedInstanceState
-            ) && !externalSourceIntentProcessors.any {
-                it.process(
-                    intent,
-                    navHost.navController,
-                    this.intent
-                )
-            }
-        ) {
+        if (isActivityColdStarted(intent, savedInstanceState) &&
+                !externalSourceIntentProcessors.any { it.process(intent, navHost.navController, this.intent) }) {
             navigateToBrowserOnColdStart()
         }
 
@@ -262,6 +257,10 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
         captureSnapshotTelemetryMetrics()
 
         startupTelemetryOnCreateCalled(intent.toSafeIntent(), savedInstanceState != null)
+        startupPathProvider.attachOnActivityOnCreate(lifecycle, intent)
+        startupTypeTelemetry = StartupTypeTelemetry(components.startupStateProvider, startupPathProvider).apply {
+            attachOnHomeActivityOnCreate(lifecycle)
+        }
 
         components.core.requestInterceptor.setNavigationController(navHost.navController)
 
@@ -272,6 +271,7 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
         safeIntent: SafeIntent,
         hasSavedInstanceState: Boolean
     ) {
+        // This function gets overridden by subclasses.
         components.appStartupTelemetry.onHomeActivityOnCreate(
             safeIntent,
             hasSavedInstanceState,
@@ -472,6 +472,7 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
         intent?.let {
             handleNewIntent(it)
         }
+        startupPathProvider.onIntentReceived(intent)
     }
 
     open fun handleNewIntent(intent: Intent) {
@@ -717,6 +718,7 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
             setSupportActionBar(navigationToolbar)
             // Add ids to this that we don't want to have a toolbar back button
             setupNavigationToolbar()
+            setNavigationIcon(R.drawable.ic_back_button)
 
             isToolbarInflated = true
         }
@@ -852,10 +854,10 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
                         SessionState.Source.USER_ENTERED,
                         true,
                         mode.isPrivate,
-                        searchEngine = engine.legacy()
+                        searchEngine = engine
                     )
             } else {
-                components.useCases.searchUseCases.defaultSearch.invoke(searchTermOrURL, engine.legacy())
+                components.useCases.searchUseCases.defaultSearch.invoke(searchTermOrURL, engine)
             }
         }
 

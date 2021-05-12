@@ -83,6 +83,7 @@
         <item name="selectLoginHeaderTextColor">@color/select_login_header_normal_theme</item>
         <item name="preferenceSectionHeader">@color/preference_section_header_normal_theme</item>
         <item name="menuItemButtonTintColor">@color/menu_item_button_normal_theme</item>
+        <item name="recentlyUsedShareMenu">@color/recently_used_share_theme</item>
 
         <!-- Shared widget colors -->
         <item name="mozac_primary_text_color">@color/primary_text_normal_theme</item>
@@ -600,12 +601,29 @@
         <item name="behavior_halfExpandedRatio">0.001</item>
     </style>
 
-    <style name="TopSite.Favicon" parent="Mozac.Widgets.Favicon">
+    <style name="TopSite.FaviconCard" parent="Mozac.Widgets.Favicon">
+        <item name="android:layout_width">@dimen/top_sites_card_size</item>
+        <item name="android:layout_height">@dimen/top_sites_card_size</item>
+        <item name="android:padding">@dimen/top_sites_card_padding</item>
+        <item name="cardBackgroundColor">?mozac_widget_favicon_background_color</item>
+        <item name="cardCornerRadius">@dimen/top_sites_card_radius</item>
+        <item name="cardElevation">@dimen/top_sites_card_elevation</item>
+        <item name="strokeColor">@color/top_sites_border_color</item>
+        <item name="strokeWidth">@dimen/top_sites_card_stroke_width</item>
+    </style>
+
+    <style name="topSiteFavicon">
         <item name="android:layout_width">@dimen/top_sites_favicon_size</item>
         <item name="android:layout_height">@dimen/top_sites_favicon_size</item>
         <item name="android:scaleType">fitCenter</item>
-        <item name="android:padding">@dimen/top_sites_favicon_padding</item>
-        <item name="android:background">@drawable/mozac_widget_favicon_background</item>
+        <item name="android:layout_gravity">center</item>
+        <item name="shapeAppearanceOverlay">@style/topSiteFaviconShape</item>
+    </style>
+
+    <style name="topSiteFaviconShape">
+        <item name="cornerFamily">rounded</item>
+        <item name="elevation">@dimen/top_sites_favicon_elevation</item>
+        <item name="cornerSize">@dimen/top_sites_favicon_corner_size</item>
     </style>
 
     <style name="TabTrayFab" parent="Widget.MaterialComponents.ExtendedFloatingActionButton">

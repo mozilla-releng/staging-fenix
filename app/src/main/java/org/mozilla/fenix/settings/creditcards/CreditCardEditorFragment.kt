@@ -13,9 +13,6 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
-import kotlinx.android.synthetic.main.fragment_credit_card_editor.*
-import mozilla.components.concept.storage.UpdatableCreditCardFields
-import mozilla.components.support.ktx.android.view.hideKeyboard
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.showToolbar
@@ -29,6 +26,8 @@ import org.mozilla.fenix.settings.creditcards.view.CreditCardEditorView
  */
 class CreditCardEditorFragment : Fragment(R.layout.fragment_credit_card_editor) {
 
+    private lateinit var creditCardEditorState: CreditCardEditorState
+    private lateinit var creditCardEditorView: CreditCardEditorView
     private val args by navArgs<CreditCardEditorFragmentArgs>()
 
     /**
@@ -58,43 +57,37 @@ class CreditCardEditorFragment : Fragment(R.layout.fragment_credit_card_editor) 
             )
         )
 
-        val creditCardEditorState =
+        creditCardEditorState =
             args.creditCard?.toCreditCardEditorState() ?: getInitialCreditCardEditorState()
-        CreditCardEditorView(view, interactor).bind(creditCardEditorState)
+        creditCardEditorView = CreditCardEditorView(view, interactor)
+        creditCardEditorView.bind(creditCardEditorState)
     }
 
     override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
         inflater.inflate(R.menu.credit_card_editor, menu)
+
+        menu.findItem(R.id.delete_credit_card_button).isVisible = isEditing
     }
 
+    @Suppress("MagicNumber")
     override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
+        R.id.delete_credit_card_button -> {
+            args.creditCard?.let { interactor.onDeleteCardButtonClicked(it.guid) }
+            true
+        }
         R.id.save_credit_card_button -> {
-            saveCreditCard()
+            creditCardEditorView.saveCreditCard(creditCardEditorState)
             true
         }
         else -> false
     }
 
-    /**
-     * Helper function called by the the "Save" button and menu item to save a new credit card
-     * from the entered credit card fields.
-     */
-    private fun saveCreditCard() {
-        view?.hideKeyboard()
-
-        interactor.onSaveButtonClicked(
-            UpdatableCreditCardFields(
-                billingName = name_on_card_input.text.toString(),
-                cardNumber = card_number_input.text.toString(),
-                expiryMonth = (expiry_month_drop_down.selectedItemPosition + 1).toLong(),
-                expiryYear = expiry_year_drop_down.selectedItem.toString().toLong(),
-                cardType = "amex"
-            )
-        )
-    }
-
     companion object {
         // Number of years to show in the expiry year dropdown.
         const val NUMBER_OF_YEARS_TO_SHOW = 10
+
+        // Placeholder for the card type. This will be replaced when we can identify the card type.
+        // This is dependent on https://github.com/mozilla-mobile/android-components/issues/9813.
+        const val CARD_TYPE_PLACEHOLDER = ""
     }
 }

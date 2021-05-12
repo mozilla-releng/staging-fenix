@@ -24,7 +24,9 @@ import mozilla.components.concept.sync.AuthType
 import mozilla.components.concept.sync.OAuthAccount
 import mozilla.components.support.ktx.android.content.getColorFromAttr
 import org.mozilla.fenix.FeatureFlags
+import org.mozilla.fenix.FeatureFlags.tabsTrayRewrite
 import org.mozilla.fenix.R
+import org.mozilla.fenix.components.accounts.FenixAccountManager
 import org.mozilla.fenix.experiments.ExperimentBranch
 import org.mozilla.fenix.experiments.Experiments
 import org.mozilla.fenix.ext.components
@@ -47,6 +49,7 @@ class HomeMenu(
         object Downloads : Item()
         object Extensions : Item()
         object SyncTabs : Item()
+        data class SyncAccount(val signedIn: Boolean) : Item()
         object WhatsNew : Item()
         object Help : Item()
         object Settings : Item()
@@ -55,14 +58,14 @@ class HomeMenu(
         data class DesktopMode(val checked: Boolean) : Item()
     }
 
-    private val primaryTextColor =
-        ThemeManager.resolveAttribute(R.attr.primaryText, context)
+    private val primaryTextColor = ThemeManager.resolveAttribute(R.attr.primaryText, context)
     private val syncDisconnectedColor =
         ThemeManager.resolveAttribute(R.attr.syncDisconnected, context)
     private val syncDisconnectedBackgroundColor =
         context.getColorFromAttr(R.attr.syncDisconnectedBackground)
 
     private val shouldUseBottomToolbar = context.settings().shouldUseBottomToolbar
+    private val accountManager = FenixAccountManager(context)
 
     // 'Reconnect' and 'Quit' items aren't needed most of the time, so we'll only create the if necessary.
     private val reconnectToSyncItem by lazy {
@@ -91,6 +94,33 @@ class HomeMenu(
         }
     }
 
+    val syncedTabsItem = BrowserMenuImageText(
+        context.getString(R.string.synced_tabs),
+        R.drawable.ic_synced_tabs,
+        primaryTextColor
+    ) {
+        onItemTapped.invoke(Item.SyncTabs)
+    }
+
+    private fun getSyncItemTitle(): String {
+        val authenticatedAccount = accountManager.authenticatedAccount
+        val email = accountManager.accountProfileEmail
+
+        return if (authenticatedAccount && !email.isNullOrEmpty()) {
+            email
+        } else {
+            context.getString(R.string.sync_menu_sign_in)
+        }
+    }
+
+    val syncSignInMenuItem = BrowserMenuImageText(
+        getSyncItemTitle(),
+        R.drawable.ic_synced_tabs,
+        primaryTextColor
+    ) {
+        onItemTapped.invoke(Item.SyncAccount(accountManager.signedInToFxa()))
+    }
+
     private val oldCoreMenuItems by lazy {
         val whatsNewItem = BrowserMenuHighlightableItem(
             context.getString(R.string.browser_menu_whats_new),
@@ -103,17 +133,10 @@ class HomeMenu(
         ) {
             onItemTapped.invoke(Item.WhatsNew)
         }
-
         val experiments = context.components.analytics.experiments
-        val bookmarksIcon = experiments.withExperiment(Experiments.BOOKMARK_ICON) {
-            when (it) {
-                ExperimentBranch.TREATMENT -> R.drawable.ic_bookmark_list
-                else -> R.drawable.ic_bookmark_filled
-            }
-        }
         val bookmarksItem = BrowserMenuImageText(
             context.getString(R.string.library_bookmarks),
-            bookmarksIcon,
+            R.drawable.ic_bookmark_list,
             primaryTextColor
         ) {
             onItemTapped.invoke(Item.Bookmarks)
@@ -155,22 +178,6 @@ class HomeMenu(
             primaryTextColor
         ) {
             onItemTapped.invoke(Item.Settings)
-        }
-
-        val accountManager = context.components.backgroundServices.accountManager
-        val account = accountManager.authenticatedAccount()
-        val syncItemTitle = if (account != null && accountManager.accountProfile()?.email != null) {
-            context.getString(R.string.sync_signed_as, accountManager.accountProfile()?.email)
-        } else {
-            context.getString(R.string.sync_menu_sign_in)
-        }
-
-        val syncedTabsItem = BrowserMenuImageText(
-            syncItemTitle,
-            R.drawable.ic_synced_tabs,
-            primaryTextColor
-        ) {
-            onItemTapped.invoke(Item.SyncTabs)
         }
 
         val helpItem = BrowserMenuImageText(
@@ -237,15 +244,9 @@ class HomeMenu(
         val experiments = context.components.analytics.experiments
         val settings = context.components.settings
 
-        val bookmarksIcon = experiments.withExperiment(Experiments.BOOKMARK_ICON) {
-            when (it) {
-                ExperimentBranch.TREATMENT -> R.drawable.ic_bookmark_list
-                else -> R.drawable.ic_bookmark_filled
-            }
-        }
         val bookmarksItem = BrowserMenuImageText(
             context.getString(R.string.library_bookmarks),
-            bookmarksIcon,
+            R.drawable.ic_bookmark_list,
             primaryTextColor
         ) {
             onItemTapped.invoke(Item.Bookmarks)
@@ -287,14 +288,6 @@ class HomeMenu(
             primaryTextColor
         ) {
             onItemTapped.invoke(Item.Extensions)
-        }
-
-        val syncSignInItem = BrowserMenuImageText(
-            context.getString(R.string.library_synced_tabs),
-            R.drawable.ic_synced_tabs,
-            primaryTextColor
-        ) {
-            onItemTapped.invoke(Item.SyncTabs)
         }
 
         val whatsNewItem = BrowserMenuHighlightableItem(
@@ -340,7 +333,7 @@ class HomeMenu(
             historyItem,
             downloadsItem,
             extensionsItem,
-            syncSignInItem,
+            if (tabsTrayRewrite) syncSignInMenuItem else syncedTabsItem,
             accountAuthItem,
             BrowserMenuDivider(),
             desktopItem,

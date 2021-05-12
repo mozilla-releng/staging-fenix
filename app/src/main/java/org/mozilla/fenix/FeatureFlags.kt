@@ -37,12 +37,12 @@ object FeatureFlags {
     /**
      * Shows new three-dot toolbar menu design.
      */
-    val toolbarMenuFeature = Config.channel.isNightlyOrDebug
+    const val toolbarMenuFeature = true
 
     /**
      * Enables the tabs tray re-write with Synced Tabs.
      */
-    val tabsTrayRewrite = Config.channel.isNightlyOrDebug
+    const val tabsTrayRewrite = true
 
     /**
      * Enables the updated icon set look and feel.

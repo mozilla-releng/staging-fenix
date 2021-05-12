@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.settings.creditcards.interactor
 
+import mozilla.components.concept.storage.NewCreditCardFields
 import mozilla.components.concept.storage.UpdatableCreditCardFields
 import org.mozilla.fenix.settings.creditcards.controller.CreditCardEditorController
 
@@ -19,12 +20,29 @@ interface CreditCardEditorInteractor {
     fun onCancelButtonClicked()
 
     /**
+     * Deletes the provided credit card in the credit card storage. Called when a user
+     * taps on the delete menu item or "Delete card" button.
+     *
+     * @param guid Unique identifier for the credit card to be deleted.
+     */
+    fun onDeleteCardButtonClicked(guid: String)
+
+    /**
      * Saves the provided credit card field into the credit card storage. Called when a user
      * taps on the save menu item or "Save" button.
      *
-     * @param creditCardFields A [UpdatableCreditCardFields] record to add.
+     * @param creditCardFields A [NewCreditCardFields] record to add.
      */
-    fun onSaveButtonClicked(creditCardFields: UpdatableCreditCardFields)
+    fun onSaveCreditCard(creditCardFields: NewCreditCardFields)
+
+    /**
+     * Updates the provided credit card with the new credit card fields. Called when a user
+     * taps on the save menu item or "Save" button when editing an existing credit card.
+     *
+     * @param guid Unique identifier for the desired credit card.
+     * @param creditCardFields The credit card fields to update.
+     */
+    fun onUpdateCreditCard(guid: String, creditCardFields: UpdatableCreditCardFields)
 }
 
 /**
@@ -41,7 +59,15 @@ class DefaultCreditCardEditorInteractor(
         controller.handleCancelButtonClicked()
     }
 
-    override fun onSaveButtonClicked(creditCardFields: UpdatableCreditCardFields) {
+    override fun onDeleteCardButtonClicked(guid: String) {
+        controller.handleDeleteCreditCard(guid)
+    }
+
+    override fun onSaveCreditCard(creditCardFields: NewCreditCardFields) {
         controller.handleSaveCreditCard(creditCardFields)
+    }
+
+    override fun onUpdateCreditCard(guid: String, creditCardFields: UpdatableCreditCardFields) {
+        controller.handleUpdateCreditCard(guid, creditCardFields)
     }
 }

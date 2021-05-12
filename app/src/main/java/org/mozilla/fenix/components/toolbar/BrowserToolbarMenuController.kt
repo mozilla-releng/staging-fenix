@@ -225,11 +225,18 @@ class DefaultBrowserToolbarMenuController(
                     BrowserFragmentDirections.actionBrowserFragmentToSyncedTabsFragment()
                 )
             }
-            is ToolbarMenu.Item.SyncAccount -> browserAnimator.captureEngineViewAndDrawStatically {
-                navController.nav(
-                    R.id.browserFragment,
-                    BrowserFragmentDirections.actionBrowserFragmentToSyncedTabsFragment()
-                )
+            is ToolbarMenu.Item.SyncAccount -> {
+                val directions = if (item.signedIn) {
+                    BrowserFragmentDirections.actionGlobalAccountSettingsFragment()
+                } else {
+                    BrowserFragmentDirections.actionGlobalTurnOnSync()
+                }
+                browserAnimator.captureEngineViewAndDrawStatically {
+                    navController.nav(
+                        R.id.browserFragment,
+                        directions
+                    )
+                }
             }
             is ToolbarMenu.Item.RequestDesktop -> {
                 currentSession?.let {
@@ -347,6 +354,7 @@ class DefaultBrowserToolbarMenuController(
                 )
             }
             is ToolbarMenu.Item.SetDefaultBrowser -> {
+                metrics.track(Event.SetDefaultBrowserToolbarMenuClicked)
                 activity.openSetDefaultBrowserOption()
             }
         }

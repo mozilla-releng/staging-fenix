@@ -26,6 +26,36 @@ class StartupStateProvider(
 ) {
 
     /**
+     * The restoration state of the application upon this most recent start up. See the
+     * [Fenix perf glossary](https://wiki.mozilla.org/index.php?title=Performance/Fenix/Glossary)
+     * for specific definitions.
+     */
+    enum class StartupState {
+        COLD, WARM, HOT,
+
+        /**
+         * A start up state where we weren't able to bucket it into the other categories.
+         * This includes, but is not limited to:
+         * - if the activity this is called from is not currently started
+         * - if the currently started activity is not the first started activity
+         */
+        UNKNOWN;
+    }
+
+    /**
+     * Returns the [StartupState] for the currently started activity. Note: the state will be
+     * [StartupState.UNKNOWN] if the currently started activity is not the first started activity.
+     *
+     * This method must be called after the foreground Activity is STARTED.
+     */
+    fun getStartupStateForStartedActivity(activityClass: Class<out Activity>): StartupState = when {
+        isColdStartForStartedActivity(activityClass) -> StartupState.COLD
+        isWarmStartForStartedActivity(activityClass) -> StartupState.WARM
+        isHotStartForStartedActivity(activityClass) -> StartupState.HOT
+        else -> StartupState.UNKNOWN
+    }
+
+    /**
      * Returns true if the current startup state is COLD and the currently started activity is the
      * first started activity (i.e. we can use it for performance measurements).
      *
@@ -44,20 +74,11 @@ class StartupStateProvider(
             return false
         }
 
-        val firstActivityStartedIndex = startupLog.log.indexOfFirst { it is LogEntry.ActivityStarted }
-        if (firstActivityStartedIndex < 0) {
-            return false // if no activities are started, then we haven't started up yet.
-        }
-
-        val firstActivityStartedAndAfter = startupLog.log.subList(firstActivityStartedIndex, startupLog.log.size)
-        val isFirstActivityStartedStillForegrounded = firstActivityStartedAndAfter == listOf(
+        val isLastStartedActivityStillStarted = startupLog.log.takeLast(2) == listOf(
             LogEntry.ActivityStarted(activityClass),
             LogEntry.AppStarted
         )
-
-        val hasAppBeenStopped = startupLog.log.contains(LogEntry.AppStopped)
-
-        return isFirstActivityStartedStillForegrounded && !hasAppBeenStopped
+        return !startupLog.log.contains(LogEntry.AppStopped) && isLastStartedActivityStillStarted
     }
 
     /**
@@ -68,4 +89,66 @@ class StartupStateProvider(
      * your own risk.
      */
     fun shouldShortCircuitColdStart(): Boolean = startupLog.log.contains(LogEntry.AppStopped)
+
+    /**
+     * Returns true if the current startup state is WARM and the currently started activity is the
+     * first started activity for this start up (i.e. we can use it for performance measurements).
+     *
+     * This method must be called after the foreground activity is STARTED.
+     */
+    fun isWarmStartForStartedActivity(activityClass: Class<out Activity>): Boolean {
+        // A warm start means:
+        // - the app was backgrounded and has since been started
+        // - the first started activity since the app was started is still active.
+        // - that activity was created before being started
+        //
+        // For the activity log, we expect:
+        //   [... App-STOPPED, ... Activity-CREATED, Activity-STARTED, App-STARTED]
+        // where:
+        // - App-STOPPED is the last STOPPED seen
+        // - we're assuming App-STARTED will only be last if one activity is started (as observed)
+        if (!startupLog.log.contains(LogEntry.AppStopped)) {
+            return false // if the app hasn't been stopped, it's not a warm start.
+        }
+        val afterLastStopped = startupLog.log.takeLastWhile { it != LogEntry.AppStopped }
+
+        @Suppress("MagicNumber") // we take a specific number at the end of the list to compare them.
+        val isLastActivityCreatedStillStarted = afterLastStopped.takeLast(3) == listOf(
+            LogEntry.ActivityCreated(activityClass),
+            LogEntry.ActivityStarted(activityClass),
+            LogEntry.AppStarted
+        )
+        return isLastActivityCreatedStillStarted
+    }
+
+    /**
+     * Returns true if the current startup state is HOT and the currently started activity is the
+     * first started activity for this start up (i.e. we can use it for performance measurements).
+     *
+     * This method must be called after the foreground activity is STARTED.
+     */
+    fun isHotStartForStartedActivity(activityClass: Class<out Activity>): Boolean {
+        // A hot start means:
+        // - the app was backgrounded and has since been started
+        // - the first started activity since the app was started is still active.
+        // - that activity was not created before being started
+        //
+        // For the activity log, we expect:
+        //   [... App-STOPPED, ... Activity-STARTED, App-STARTED]
+        // where:
+        // - App-STOPPED is the last STOPPED seen
+        // - App-CREATED is NOT called for this activity
+        // - we're assuming App-STARTED will only be last if one activity is started (as observed)
+        if (!startupLog.log.contains(LogEntry.AppStopped)) {
+            return false // if the app hasn't been stopped, it's not a hot start.
+        }
+        val afterLastStopped = startupLog.log.takeLastWhile { it != LogEntry.AppStopped }
+
+        val isLastActivityStartedStillStarted = afterLastStopped.takeLast(2) == listOf(
+            LogEntry.ActivityStarted(activityClass),
+            LogEntry.AppStarted
+        )
+        return !afterLastStopped.contains(LogEntry.ActivityCreated(activityClass)) &&
+            isLastActivityStartedStillStarted
+    }
 }

@@ -353,8 +353,13 @@ class Settings(private val appContext: Context) : PreferencesHolder {
 
     var tabsTrayRewrite by featureFlagPreference(
         appContext.getPreferenceKey(R.string.pref_key_new_tabs_tray),
-        default = false,
+        default = true,
         featureFlag = FeatureFlags.tabsTrayRewrite
+    )
+
+    var allowThirdPartyRootCerts by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_allow_third_party_root_certs),
+        default = false
     )
 
     fun getTabTimeout(): Long = when {
@@ -851,11 +856,6 @@ class Settings(private val appContext: Context) : PreferencesHolder {
         default = true
     )
 
-    var fxaSignedIn by booleanPreference(
-        appContext.getPreferenceKey(R.string.pref_key_fxa_signed_in),
-        default = false
-    )
-
     var fxaHasSyncedItems by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_fxa_has_synced_items),
         default = false
@@ -1060,6 +1060,11 @@ class Settings(private val appContext: Context) : PreferencesHolder {
      */
     var openNextTabInDesktopMode by booleanPreference(
         appContext.getPreferenceKey(R.string.pref_key_open_next_tab_desktop_mode),
+        default = false
+    )
+
+    var signedInFxaAccount by booleanPreference(
+        appContext.getPreferenceKey(R.string.pref_key_fxa_signed_in),
         default = false
     )
 }

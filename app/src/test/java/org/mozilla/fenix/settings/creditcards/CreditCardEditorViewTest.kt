@@ -7,17 +7,24 @@ package org.mozilla.fenix.settings.creditcards
 import android.view.LayoutInflater
 import android.view.View
 import io.mockk.mockk
+import io.mockk.spyk
 import io.mockk.verify
 import kotlinx.android.synthetic.main.fragment_credit_card_editor.view.*
 import mozilla.components.concept.storage.CreditCard
+import mozilla.components.concept.storage.CreditCardNumber
+import mozilla.components.concept.storage.NewCreditCardFields
 import mozilla.components.concept.storage.UpdatableCreditCardFields
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.R
+import org.mozilla.fenix.ext.toEditable
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
+import org.mozilla.fenix.settings.creditcards.CreditCardEditorFragment.Companion.CARD_TYPE_PLACEHOLDER
 import org.mozilla.fenix.settings.creditcards.CreditCardEditorFragment.Companion.NUMBER_OF_YEARS_TO_SHOW
 import org.mozilla.fenix.settings.creditcards.interactor.CreditCardEditorInteractor
 import org.mozilla.fenix.settings.creditcards.view.CreditCardEditorView
@@ -33,7 +40,8 @@ class CreditCardEditorViewTest {
     private val creditCard = CreditCard(
         guid = "id",
         billingName = "Banana Apple",
-        cardNumber = "4111111111111110",
+        encryptedCardNumber = CreditCardNumber.Encrypted("371449635398431"),
+        cardNumberLast4 = "8431",
         expiryMonth = 5,
         expiryYear = 2030,
         cardType = "amex",
@@ -48,7 +56,7 @@ class CreditCardEditorViewTest {
         view = LayoutInflater.from(testContext).inflate(R.layout.fragment_credit_card_editor, null)
         interactor = mockk(relaxed = true)
 
-        creditCardEditorView = CreditCardEditorView(view, interactor)
+        creditCardEditorView = spyk(CreditCardEditorView(view, interactor))
     }
 
     @Test
@@ -73,13 +81,15 @@ class CreditCardEditorViewTest {
             assertEquals(startYear.toString(), selectedItem.toString())
             assertEquals(endYear.toString(), getItemAtPosition(count - 1).toString())
         }
+
+        assertEquals(View.GONE, view.delete_button.visibility)
     }
 
     @Test
     fun `GIVEN a credit card THEN credit card form inputs are displaying the provided credit card information`() {
         creditCardEditorView.bind(creditCard.toCreditCardEditorState())
 
-        assertEquals(creditCard.cardNumber, view.card_number_input.text.toString())
+        assertEquals(creditCard.encryptedCardNumber.number, view.card_number_input.text.toString())
         assertEquals(creditCard.billingName, view.name_on_card_input.text.toString())
 
         with(view.expiry_month_drop_down) {
@@ -97,6 +107,17 @@ class CreditCardEditorViewTest {
     }
 
     @Test
+    fun `GIVEN a credit card WHEN the delete card button is clicked THEN interactor is called`() {
+        creditCardEditorView.bind(creditCard.toCreditCardEditorState())
+
+        assertEquals(View.VISIBLE, view.delete_button.visibility)
+
+        view.delete_button.performClick()
+
+        verify { interactor.onDeleteCardButtonClicked(creditCard.guid) }
+    }
+
+    @Test
     fun `WHEN the cancel button is clicked THEN interactor is called`() {
         creditCardEditorView.bind(getInitialCreditCardEditorState())
 
@@ -106,19 +127,95 @@ class CreditCardEditorViewTest {
     }
 
     @Test
-    fun `GIVEN a credit card WHEN the save button is clicked THEN interactor is called`() {
+    fun `GIVEN invalid credit card number WHEN the save button is clicked THEN interactor is not called`() {
+        creditCardEditorView.bind(getInitialCreditCardEditorState())
+
+        val calendar = Calendar.getInstance()
+
+        val billingName = "Banana Apple"
+        val cardNumber = "4111111111111110"
+        val expiryMonth = 5
+        val expiryYear = calendar.get(Calendar.YEAR)
+
+        view.card_number_input.text = cardNumber.toEditable()
+        view.name_on_card_input.text = billingName.toEditable()
+        view.expiry_month_drop_down.setSelection(expiryMonth - 1)
+
+        view.save_button.performClick()
+
+        verify {
+            creditCardEditorView.validateCreditCard()
+        }
+
+        assertFalse(creditCardEditorView.validateCreditCard())
+
+        verify(exactly = 0) {
+            interactor.onSaveCreditCard(
+                NewCreditCardFields(
+                    billingName = billingName,
+                    plaintextCardNumber = CreditCardNumber.Plaintext(cardNumber),
+                    cardNumberLast4 = "1110",
+                    expiryMonth = expiryMonth.toLong(),
+                    expiryYear = expiryYear.toLong(),
+                    cardType = CARD_TYPE_PLACEHOLDER
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `GIVEN valid credit card number WHEN the save button is clicked THEN interactor is called`() {
+        creditCardEditorView.bind(getInitialCreditCardEditorState())
+
+        val calendar = Calendar.getInstance()
+
+        val billingName = "Banana Apple"
+        val cardNumber = "371449635398431"
+        val expiryMonth = 5
+        val expiryYear = calendar.get(Calendar.YEAR)
+
+        view.card_number_input.text = cardNumber.toEditable()
+        view.name_on_card_input.text = billingName.toEditable()
+        view.expiry_month_drop_down.setSelection(expiryMonth - 1)
+
+        view.save_button.performClick()
+
+        verify {
+            creditCardEditorView.validateCreditCard()
+        }
+
+        assertTrue(creditCardEditorView.validateCreditCard())
+
+        verify {
+            interactor.onSaveCreditCard(
+                NewCreditCardFields(
+                    billingName = billingName,
+                    plaintextCardNumber = CreditCardNumber.Plaintext(cardNumber),
+                    cardNumberLast4 = "8431",
+                    expiryMonth = expiryMonth.toLong(),
+                    expiryYear = expiryYear.toLong(),
+                    cardType = CARD_TYPE_PLACEHOLDER
+                )
+            )
+        }
+    }
+
+    @Test
+    fun `GIVEN a valid credit card WHEN the save button is clicked THEN interactor is called`() {
         creditCardEditorView.bind(creditCard.toCreditCardEditorState())
 
         view.save_button.performClick()
 
         verify {
-            interactor.onSaveButtonClicked(
-                UpdatableCreditCardFields(
+            interactor.onUpdateCreditCard(
+                guid = creditCard.guid,
+                creditCardFields = UpdatableCreditCardFields(
                     billingName = creditCard.billingName,
-                    cardNumber = creditCard.cardNumber,
+                    cardNumber = creditCard.encryptedCardNumber,
+                    cardNumberLast4 = creditCard.cardNumberLast4,
                     expiryMonth = creditCard.expiryMonth,
                     expiryYear = creditCard.expiryYear,
-                    cardType = "amex"
+                    cardType = CARD_TYPE_PLACEHOLDER
                 )
             )
         }

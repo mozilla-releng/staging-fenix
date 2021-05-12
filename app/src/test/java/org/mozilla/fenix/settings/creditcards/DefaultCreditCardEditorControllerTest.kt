@@ -13,6 +13,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestCoroutineDispatcher
 import kotlinx.coroutines.test.TestCoroutineScope
 import kotlinx.coroutines.test.runBlockingTest
+import mozilla.components.concept.storage.CreditCardNumber
+import mozilla.components.concept.storage.NewCreditCardFields
 import mozilla.components.concept.storage.UpdatableCreditCardFields
 import mozilla.components.service.sync.autofill.AutofillCreditCardsAddressesStorage
 import mozilla.components.support.test.rule.MainCoroutineRule
@@ -64,10 +66,23 @@ class DefaultCreditCardEditorControllerTest {
     }
 
     @Test
+    fun handleDeleteCreditCard() = testCoroutineScope.runBlockingTest {
+        val creditCardId = "id"
+
+        controller.handleDeleteCreditCard(creditCardId)
+
+        coVerify {
+            storage.deleteCreditCard(creditCardId)
+            navController.popBackStack()
+        }
+    }
+
+    @Test
     fun handleSaveCreditCard() = testCoroutineScope.runBlockingTest {
-        val creditCardFields = UpdatableCreditCardFields(
+        val creditCardFields = NewCreditCardFields(
             billingName = "Banana Apple",
-            cardNumber = "4111111111111112",
+            plaintextCardNumber = CreditCardNumber.Plaintext("4111111111111112"),
+            cardNumberLast4 = "1112",
             expiryMonth = 1,
             expiryYear = 2030,
             cardType = "discover"
@@ -77,6 +92,26 @@ class DefaultCreditCardEditorControllerTest {
 
         coVerify {
             storage.addCreditCard(creditCardFields)
+            navController.popBackStack()
+        }
+    }
+
+    @Test
+    fun handleUpdateCreditCard() = testCoroutineScope.runBlockingTest {
+        val creditCardId = "id"
+        val creditCardFields = UpdatableCreditCardFields(
+            billingName = "Banana Apple",
+            cardNumber = CreditCardNumber.Plaintext("4111111111111112"),
+            cardNumberLast4 = "1112",
+            expiryMonth = 1,
+            expiryYear = 2034,
+            cardType = "discover"
+        )
+
+        controller.handleUpdateCreditCard(creditCardId, creditCardFields)
+
+        coVerify {
+            storage.updateCreditCard(creditCardId, creditCardFields)
             navController.popBackStack()
         }
     }
