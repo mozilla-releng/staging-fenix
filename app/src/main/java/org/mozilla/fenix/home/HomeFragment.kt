@@ -96,6 +96,7 @@ import org.mozilla.fenix.components.FenixSnackbar
 import org.mozilla.fenix.components.PrivateShortcutCreateManager
 import org.mozilla.fenix.components.StoreProvider
 import org.mozilla.fenix.components.TabCollectionStorage
+import org.mozilla.fenix.components.accounts.AccountState
 import org.mozilla.fenix.components.metrics.Event
 import org.mozilla.fenix.components.tips.FenixTipManager
 import org.mozilla.fenix.components.tips.Tip
@@ -105,7 +106,6 @@ import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.ext.asRecentTabs
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.hideToolbar
-import org.mozilla.fenix.ext.navigateBlockingForAsyncNavGraph
 import org.mozilla.fenix.ext.measureNoInline
 import org.mozilla.fenix.ext.metrics
 import org.mozilla.fenix.ext.nav
@@ -115,7 +115,7 @@ import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.mozonline.showPrivacyPopWindow
 import org.mozilla.fenix.home.recenttabs.controller.DefaultRecentTabsController
 import org.mozilla.fenix.home.sessioncontrol.DefaultSessionControlController
-import org.mozilla.fenix.home.sessioncontrol.RecentTabsListFeature
+import org.mozilla.fenix.home.recenttabs.RecentTabsListFeature
 import org.mozilla.fenix.home.sessioncontrol.SessionControlInteractor
 import org.mozilla.fenix.home.sessioncontrol.SessionControlView
 import org.mozilla.fenix.home.sessioncontrol.viewholders.CollectionViewHolder
@@ -416,6 +416,7 @@ class HomeFragment : Fragment() {
             }
 
             view.tab_button.setOnClickListener {
+                requireComponents.analytics.metrics.track(Event.StartOnHomeOpenTabsTray)
                 openTabsTray()
             }
 
@@ -556,7 +557,7 @@ class HomeFragment : Fragment() {
             requireContext().getString(R.string.snackbar_deleted_undo),
             {
                 requireComponents.useCases.tabsUseCases.undo.invoke()
-                findNavController().navigateBlockingForAsyncNavGraph(
+                findNavController().navigate(
                     HomeFragmentDirections.actionGlobalBrowser(null)
                 )
             },
@@ -648,7 +649,7 @@ class HomeFragment : Fragment() {
     }
 
     private fun navToSavedLogins() {
-        findNavController().navigateBlockingForAsyncNavGraph(
+        findNavController().navigate(
             HomeFragmentDirections.actionGlobalSavedLoginsAuthFragment())
     }
 
@@ -809,10 +810,13 @@ class HomeFragment : Fragment() {
                     }
                     is HomeMenu.Item.SyncAccount -> {
                         hideOnboardingIfNeeded()
-                        val directions = if (it.signedIn) {
-                            BrowserFragmentDirections.actionGlobalAccountSettingsFragment()
-                        } else {
-                            BrowserFragmentDirections.actionGlobalTurnOnSync()
+                        val directions = when (it.accountState) {
+                            AccountState.AUTHENTICATED ->
+                                BrowserFragmentDirections.actionGlobalAccountSettingsFragment()
+                            AccountState.NEEDS_REAUTHENTICATION ->
+                                BrowserFragmentDirections.actionGlobalAccountProblemFragment()
+                            AccountState.NO_ACCOUNT ->
+                                BrowserFragmentDirections.actionGlobalTurnOnSync()
                         }
                         nav(
                             R.id.homeFragment,
